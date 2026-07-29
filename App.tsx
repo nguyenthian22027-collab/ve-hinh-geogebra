@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import GeoGebraBoard from './components/GeoGebraBoard';
 import { generateGeoGebraCommands } from './services/geminiService';
@@ -12,6 +12,17 @@ function App() {
   // Lưu alias cho các lệnh GeoGebra trả về nhiều đối tượng.
   // Ví dụ: tangentsA = Tangent(A, circleO) có thể tạo 2 đường tiếp tuyến.
   const multiObjectAliases = useRef<Record<string, string[]>>({});
+
+  // Fallback: nếu GeoGebra không gọi callback sau 20s, tự tắt màn hình chờ
+  useEffect(() => {
+    if (isGgbReady) return;
+    const timer = setTimeout(() => {
+      setIsGgbReady(true);
+      addLog('GeoGebra engine timed out – some features may be limited.', 'warning');
+    }, 20000);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isGgbReady]);
 
   const addLog = useCallback((text: string, type: LogMessage['type'] = 'info') => {
     setLogs(prev => [...prev, {

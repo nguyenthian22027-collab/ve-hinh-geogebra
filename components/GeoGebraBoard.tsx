@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 
 interface GeoGebraBoardProps {
   onReady: () => void;
@@ -8,40 +8,70 @@ const GeoGebraBoard: React.FC<GeoGebraBoardProps> = ({ onReady }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const appletRef = useRef<any>(null);
   const isReadyCalledRef = useRef(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleReady = useCallback(() => {
+    if (isReadyCalledRef.current) return;
+    isReadyCalledRef.current = true;
+
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+
+    console.log('[GGB] Engine ready');
+    try {
+      if (window.ggbApplet) {
+        window.ggbApplet.setGridVisible(true);
+        window.ggbApplet.setAxesVisible(true, true);
+      }
+    } catch (e) {
+      console.warn('[GGB] Could not configure defaults:', e);
+    }
+
+    onReady();
+  }, [onReady]);
 
   useEffect(() => {
-    // Only initialize once
     if (appletRef.current) return;
 
-    const handleReady = () => {
-      if (isReadyCalledRef.current) return;
-      isReadyCalledRef.current = true;
-      console.log('GeoGebra Engine Ready');
-      try {
-        if (window.ggbApplet) {
-          window.ggbApplet.setGridVisible(true);
-          window.ggbApplet.setAxesVisible(true, true);
+    // Register global callbacks GeoGebra will call
+    (window as any).ggbOnInit = () => handleReady();
+    (window as any).ggbAppletOnLoad = () => handleReady();
+
+    const startPolling = () => {
+      let waited = 0;
+      pollRef.current = setInterval(() => {
+        waited += 500;
+
+        const applet = window.ggbApplet;
+        if (
+          applet &&
+          typeof applet.evalCommand === 'function' &&
+          typeof applet.reset === 'function' &&
+          typeof applet.setVisible === 'function'
+        ) {
+          handleReady();
+          return;
         }
-      } catch (e) {
-        console.warn('Could not set default grid/axes:', e);
-      }
-      onReady();
+
+        // After 30s give up polling (but don't call onReady - GGB truly failed)
+        if (waited >= 30000 && pollRef.current) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+      }, 500);
     };
 
-    // Register global callback that GeoGebra will call by name
-    (window as any).ggbOnInit = () => {
-      handleReady();
-    };
-
-    const doInject = () => {
+    const injectGGB = () => {
       if (!window.GGBApplet) {
-        setTimeout(doInject, 300);
+        setTimeout(injectGGB, 300);
         return;
       }
 
-      if (!containerRef.current) return;
+      if (!containerRef.current || appletRef.current) return;
 
-      const parameters = {
+      const params = {
         id: 'ggbApplet',
         appName: 'geometry',
         width: 1200,
@@ -54,53 +84,45 @@ const GeoGebraBoard: React.FC<GeoGebraBoardProps> = ({ onReady }) => {
         enableShiftDragZoom: true,
         enableRightClick: true,
         showLogging: false,
-        useBrowserForJS: true,   // REQUIRED for HTTPS / Vercel to fire JS callbacks
+        useBrowserForJS: true,
         borderColor: null,
         capturingThreshold: null,
         perspective: 'G',
         appletOnLoad: 'ggbOnInit',
       };
 
-      const applet = new window.GGBApplet(parameters, '5.0');
+      const applet = new window.GGBApplet(params, '5.0');
       appletRef.current = applet;
       applet.inject(containerRef.current.id);
 
-      // Fallback polling - in case ggbOnInit callback is missed
-      let waited = 0;
-      const poll = setInterval(() => {
-        waited += 400;
-        if (
-          window.ggbApplet &&
-          typeof window.ggbApplet.evalCommand === 'function' &&
-          typeof window.ggbApplet.reset === 'function'
-        ) {
-          clearInterval(poll);
-          handleReady();
-        }
-        if (waited >= 20000) clearInterval(poll);
-      }, 400);
+      // Start polling as a safety net
+      startPolling();
     };
 
-    doInject();
+    // If deployggb.js is already loaded, inject immediately
+    // Otherwise wait for it (it's loaded in index.html)
+    if (document.readyState === 'complete') {
+      injectGGB();
+    } else {
+      window.addEventListener('load', injectGGB, { once: true });
+    }
 
     return () => {
-      // Cleanup global callback on unmount
+      if (pollRef.current) clearInterval(pollRef.current);
       delete (window as any).ggbOnInit;
+      delete (window as any).ggbAppletOnLoad;
     };
-  }, []); // Empty deps - only run once on mount
+  }, [handleReady]);
 
   return (
     <div className="w-full h-full relative bg-slate-50">
-      {/* Container for GeoGebra */}
       <div
         id="ggb-element"
         ref={containerRef}
         className="absolute inset-0 z-10"
       />
-
-      {/* Background watermark */}
-      <div className="absolute inset-0 flex items-center justify-center text-slate-300 pointer-events-none z-0">
-        <span className="font-bold text-4xl opacity-20 tracking-widest">GEOGEBRA</span>
+      <div className="absolute inset-0 flex items-center justify-center text-slate-200 pointer-events-none z-0">
+        <span className="font-bold text-5xl tracking-widest select-none">GEOGEBRA</span>
       </div>
     </div>
   );
