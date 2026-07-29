@@ -1,22 +1,29 @@
-import React, { useState, useRef } from 'react';
-import { 
-  Play, 
-  RotateCcw, 
-  Eraser, 
-  Terminal, 
-  ChevronRight, 
-  Info, 
-  CheckCircle2, 
-  AlertTriangle, 
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  Play,
+  Eraser,
+  Terminal,
+  ChevronRight,
+  Info,
+  CheckCircle2,
+  AlertTriangle,
   BrainCircuit,
   PenTool,
   Loader2,
   ImagePlus,
-  ImageIcon
+  ImageIcon,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Save,
+  Trash2,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
 } from 'lucide-react';
 import { EXAMPLES } from '../constants';
 import { LogMessage, ExampleProblem } from '../types';
-import { extractProblemFromImage } from '../services/geminiService';
+import { extractProblemFromImage, saveApiKey, clearApiKey, getApiKey } from '../services/geminiService';
 
 interface SidebarProps {
   onGenerate: (prompt: string) => void;
@@ -30,6 +37,41 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
   const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // --- API Key state ---
+  const [apiKey, setApiKey] = useState('');
+  const [savedKey, setSavedKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [keyPanelOpen, setKeyPanelOpen] = useState(false);
+  const [keySaved, setKeySaved] = useState(false);
+
+  useEffect(() => {
+    const stored = getApiKey();
+    if (stored) {
+      setSavedKey(stored);
+      setApiKey(stored);
+      setKeyPanelOpen(false);
+    } else {
+      setKeyPanelOpen(true); // Auto-open if no key yet
+    }
+  }, []);
+
+  const handleSaveKey = () => {
+    if (!apiKey.trim()) return;
+    saveApiKey(apiKey.trim());
+    setSavedKey(apiKey.trim());
+    setKeySaved(true);
+    setKeyPanelOpen(false);
+    setTimeout(() => setKeySaved(false), 2000);
+  };
+
+  const handleClearKey = () => {
+    clearApiKey();
+    setSavedKey('');
+    setApiKey('');
+    setKeyPanelOpen(true);
+  };
+
+  // --- Existing logic ---
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (input.trim()) {
@@ -46,9 +88,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
       alert('Vui lòng chỉ chọn file ảnh (PNG, JPEG).');
       return;
     }
-
     setIsAnalyzingImage(true);
-    
     try {
       const reader = new FileReader();
       reader.onloadend = async () => {
@@ -79,7 +119,6 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
     if (e.target.files && e.target.files[0]) {
       processImageFile(e.target.files[0]);
     }
-    // Reset input so same file can be selected again
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -89,17 +128,15 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
       if (items[i].type.indexOf('image') !== -1) {
         e.preventDefault();
         const file = items[i].getAsFile();
-        if (file) {
-          processImageFile(file);
-        }
+        if (file) processImageFile(file);
         return;
       }
     }
   };
 
-  const triggerFileUpload = () => {
-    fileInputRef.current?.click();
-  };
+  const maskedKey = savedKey
+    ? savedKey.substring(0, 6) + '••••••••••••' + savedKey.slice(-4)
+    : '';
 
   return (
     <div className="w-full md:w-[450px] flex flex-col h-full bg-white border-r border-teal-100 shadow-xl z-20">
@@ -116,16 +153,108 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
         </div>
       </div>
 
-      {/* Input Section */}
       <div className="p-5 flex-1 flex flex-col min-h-0 overflow-y-auto custom-scrollbar">
+
+        {/* ─── API KEY PANEL ─── */}
+        <div className={`mb-4 rounded-xl border transition-all duration-200 overflow-hidden ${
+          savedKey
+            ? 'border-teal-200 bg-teal-50/40'
+            : 'border-amber-300 bg-amber-50 shadow-sm shadow-amber-200'
+        }`}>
+          {/* Panel header - clickable toggle */}
+          <button
+            onClick={() => setKeyPanelOpen(o => !o)}
+            className="w-full flex items-center justify-between px-4 py-3 text-left"
+          >
+            <div className="flex items-center gap-2">
+              <KeyRound size={15} className={savedKey ? 'text-teal-600' : 'text-amber-600'} />
+              <span className={`text-sm font-semibold ${savedKey ? 'text-teal-700' : 'text-amber-700'}`}>
+                {savedKey ? 'Gemini API Key' : '⚠️ Chưa có API Key'}
+              </span>
+              {savedKey && (
+                <span className="text-xs font-mono text-teal-500 bg-teal-100 px-2 py-0.5 rounded-full">
+                  {maskedKey}
+                </span>
+              )}
+            </div>
+            {keyPanelOpen
+              ? <ChevronUp size={15} className="text-slate-400" />
+              : <ChevronDown size={15} className="text-slate-400" />
+            }
+          </button>
+
+          {/* Panel body */}
+          {keyPanelOpen && (
+            <div className="px-4 pb-4 flex flex-col gap-3 border-t border-slate-100">
+              <p className="text-xs text-slate-500 mt-3">
+                Nhập{' '}
+                <a
+                  href="https://aistudio.google.com/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-teal-600 underline font-medium inline-flex items-center gap-0.5"
+                >
+                  Gemini API Key <ExternalLink size={11} />
+                </a>
+                {' '}của bạn (miễn phí). Key được lưu trên trình duyệt, không gửi đi đâu khác.
+              </p>
+
+              {/* Key input */}
+              <div className="relative">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={e => setApiKey(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleSaveKey()}
+                  placeholder="AIza..."
+                  className="w-full pr-10 pl-3 py-2.5 text-sm font-mono border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-teal-400 text-slate-700 placeholder:text-slate-300"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(s => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  {showKey ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSaveKey}
+                  disabled={!apiKey.trim()}
+                  className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    apiKey.trim()
+                      ? 'bg-teal-600 text-white hover:bg-teal-700 shadow-md shadow-teal-500/20'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  {keySaved ? <CheckCircle2 size={15} /> : <Save size={15} />}
+                  {keySaved ? 'Đã lưu!' : 'Lưu key'}
+                </button>
+                {savedKey && (
+                  <button
+                    onClick={handleClearKey}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-red-50 text-red-500 hover:bg-red-100 border border-red-100 transition-all"
+                  >
+                    <Trash2 size={14} />
+                    Xóa
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ─── INPUT SECTION ─── */}
         <div className="mb-4 relative">
           <div className="flex justify-between items-center mb-2">
             <label className="text-xs font-bold text-teal-600 uppercase tracking-wider flex items-center gap-2">
               <BrainCircuit size={14} />
               Mô tả bài toán
             </label>
-            <button 
-              onClick={triggerFileUpload}
+            <button
+              onClick={() => fileInputRef.current?.click()}
               disabled={isAnalyzingImage || isLoading}
               className="text-xs flex items-center gap-1.5 px-2 py-1 rounded-md bg-teal-50 text-teal-700 hover:bg-teal-100 transition-colors border border-teal-200"
               title="Tải ảnh lên hoặc dán (Ctrl+V) vào khung bên dưới"
@@ -133,15 +262,15 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
               <ImagePlus size={14} />
               <span>Thêm ảnh</span>
             </button>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              className="hidden" 
+            <input
+              type="file"
+              ref={fileInputRef}
+              className="hidden"
               accept="image/png, image/jpeg, image/jpg, image/webp"
               onChange={handleFileChange}
             />
           </div>
-          
+
           <div className="relative group">
             <textarea
               value={input}
@@ -172,7 +301,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
           </p>
         </div>
 
-        {/* Examples */}
+        {/* ─── EXAMPLES ─── */}
         <div className="mb-6">
           <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">
             Bài toán mẫu
@@ -197,7 +326,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
           </div>
         </div>
 
-        {/* Actions */}
+        {/* ─── ACTIONS ─── */}
         <div className="flex gap-2 mb-6">
           <button
             onClick={onClear}
@@ -209,19 +338,25 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
           </button>
           <button
             onClick={handleSubmit}
-            disabled={isLoading || isAnalyzingImage || !input.trim()}
+            disabled={isLoading || isAnalyzingImage || !input.trim() || !savedKey}
             className={`flex-1 px-4 py-3 rounded-xl flex items-center justify-center gap-2 font-semibold text-sm shadow-lg shadow-teal-500/30 transition-all transform active:scale-95 ${
-              isLoading || isAnalyzingImage || !input.trim()
+              isLoading || isAnalyzingImage || !input.trim() || !savedKey
                 ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
                 : 'bg-gradient-to-r from-teal-600 to-teal-500 text-white hover:brightness-110'
             }`}
           >
             {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Play size={18} fill="currentColor" />}
-            <span>{isLoading ? 'Đang phân tích...' : 'Vẽ hình ngay'}</span>
+            <span>
+              {isLoading
+                ? 'Đang phân tích...'
+                : !savedKey
+                  ? 'Cần nhập API Key'
+                  : 'Vẽ hình ngay'}
+            </span>
           </button>
         </div>
 
-        {/* Logs Console */}
+        {/* ─── CONSOLE ─── */}
         <div className="flex-1 flex flex-col min-h-[150px] bg-slate-900 rounded-xl overflow-hidden border border-slate-800 shadow-inner">
           <div className="bg-slate-800/50 px-4 py-2 border-b border-slate-700 flex items-center justify-between">
             <span className="text-xs font-mono text-teal-400 flex items-center gap-2">
@@ -244,11 +379,13 @@ const Sidebar: React.FC<SidebarProps> = ({ onGenerate, onClear, logs, isLoading 
                   {log.type === 'info' && <Info size={12} className="text-blue-400" />}
                   {log.type === 'success' && <CheckCircle2 size={12} className="text-green-400" />}
                   {log.type === 'error' && <AlertTriangle size={12} className="text-red-400" />}
+                  {log.type === 'warning' && <AlertTriangle size={12} className="text-yellow-400" />}
                 </span>
                 <span className={`break-words leading-relaxed ${
                   log.type === 'command' ? 'text-teal-200' :
                   log.type === 'success' ? 'text-green-300' :
                   log.type === 'error' ? 'text-red-300' :
+                  log.type === 'warning' ? 'text-yellow-200' :
                   'text-slate-300'
                 }`}>
                   {log.text}

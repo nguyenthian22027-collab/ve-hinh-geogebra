@@ -1,10 +1,27 @@
 import { GoogleGenAI } from "@google/genai";
 import { SYSTEM_INSTRUCTION, IMAGE_EXTRACTION_PROMPT } from "../constants";
 
+const LS_KEY = 'ggb_gemini_api_key';
+
+/** Lưu API key vào localStorage */
+export const saveApiKey = (key: string) => {
+  localStorage.setItem(LS_KEY, key.trim());
+};
+
+/** Xóa API key khỏi localStorage */
+export const clearApiKey = () => {
+  localStorage.removeItem(LS_KEY);
+};
+
+/** Đọc API key: ưu tiên localStorage, fallback sang biến môi trường */
+export const getApiKey = (): string => {
+  return localStorage.getItem(LS_KEY) || process.env.GEMINI_API_KEY || '';
+};
+
 const getAIClient = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = getApiKey();
   if (!apiKey) {
-    throw new Error("API Key is missing. Please configure process.env.GEMINI_API_KEY.");
+    throw new Error("Chưa có API Key. Vui lòng nhập Gemini API Key vào ô cài đặt bên dưới.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -14,7 +31,7 @@ export const generateGeoGebraCommands = async (prompt: string): Promise<string[]
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -25,7 +42,6 @@ export const generateGeoGebraCommands = async (prompt: string): Promise<string[]
     const text = response.text;
     if (!text) return [];
 
-    // Clean up the response
     const commands = text
       .split('\n')
       .map(line => line.trim())
@@ -42,11 +58,10 @@ export const extractProblemFromImage = async (base64Data: string, mimeType: stri
   const ai = getAIClient();
 
   try {
-    // Clean base64 string if it contains the header
     const cleanBase64 = base64Data.replace(/^data:image\/(png|jpeg|jpg|webp);base64,/, '');
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-2.5-flash',
       contents: {
         parts: [
           {
