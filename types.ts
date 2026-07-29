@@ -32,5 +32,6 @@ declare global {
   interface Window {
     GGBApplet: any;
     ggbApplet: GeoGebraApplet;
+    ggbAppletOnLoad?: (id: string) => void;
   }
 }

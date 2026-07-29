@@ -7,10 +7,31 @@ interface GeoGebraBoardProps {
 const GeoGebraBoard: React.FC<GeoGebraBoardProps> = ({ onReady }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const appletRef = useRef<any>(null);
+  const isReadyCalledRef = useRef(false);
 
   useEffect(() => {
     // Only initialize once
     if (appletRef.current) return;
+
+    const handleReady = () => {
+      if (isReadyCalledRef.current) return;
+      isReadyCalledRef.current = true;
+      console.log("GeoGebra Loaded");
+      if (window.ggbApplet) {
+        try {
+          window.ggbApplet.setGridVisible(true);
+          window.ggbApplet.setAxesVisible(true, true);
+        } catch (e) {
+          console.warn("Could not set default grid/axes:", e);
+        }
+      }
+      onReady();
+    };
+
+    // Attach global callback for GeoGebra engine
+    window.ggbAppletOnLoad = (id: string) => {
+      handleReady();
+    };
 
     const initGGB = () => {
       if (window.GGBApplet) {
@@ -31,15 +52,7 @@ const GeoGebraBoard: React.FC<GeoGebraBoardProps> = ({ onReady }) => {
           "useBrowserForJS": false,
           "perspective": "Geometry", // Force Geometry perspective
           "appName": "geometry",
-          "appletOnLoad": () => {
-            console.log("GeoGebra Loaded");
-            // Set some default styling for the view
-            if (window.ggbApplet) {
-              window.ggbApplet.setGridVisible(true);
-              window.ggbApplet.setAxesVisible(true, true);
-            }
-            onReady();
-          }
+          "appletOnLoad": "ggbAppletOnLoad"
         };
 
         const applet = new window.GGBApplet(parameters, '5.0');
@@ -48,6 +61,16 @@ const GeoGebraBoard: React.FC<GeoGebraBoardProps> = ({ onReady }) => {
         if (containerRef.current) {
           applet.inject(containerRef.current.id);
         }
+
+        // Safety fallback poll in case ggbAppletOnLoad event is missed
+        const checkInterval = setInterval(() => {
+          if (window.ggbApplet && typeof window.ggbApplet.evalCommand === 'function') {
+            clearInterval(checkInterval);
+            handleReady();
+          }
+        }, 500);
+
+        setTimeout(() => clearInterval(checkInterval), 15000);
       } else {
         // Retry if script hasn't loaded yet
         setTimeout(initGGB, 500);
